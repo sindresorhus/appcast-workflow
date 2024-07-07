@@ -1,0 +1,70 @@
+name: Generate and Publish Appcast
+
+on:
+  workflow_call:
+    secrets:
+      SPARKLE_PRIVATE_KEY:
+        required: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get latest release info
+      id: get_release
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const release = await github.rest.repos.getLatestRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          });
+          const asset = release.data.assets[0];
+          core.setOutput('version', release.data.tag_name);
+          core.setOutput('asset_url', release.data.assets[0].browser_download_url);
+          core.setOutput('asset_name', release.data.assets[0].name);
+          core.setOutput('release_notes', release.data.body);
+
+    - name: Download release asset
+      run: |
+        mkdir archives
+        curl --location --output "archives/${{ steps.get_release.outputs.asset_name }}" "${{ steps.get_release.outputs.asset_url }}"
+
+    - name: Convert Markdown to HTML
+      run: |
+        ASSET_NAME="${{ steps.get_release.outputs.asset_name }}"
+        echo "${{ steps.get_release.outputs.release_notes }}" | npx marked > "archives/${ASSET_NAME%.zip}.html"
+
+    - name: Generate appcast.xml
+      run: |
+        curl --location https://github.com/sparkle-project/Sparkle/releases/download/2.6.2/Sparkle-2.6.2.tar.xz | tar --extract --xz
+        echo "${{ secrets.SPARKLE_PRIVATE_KEY }}" | ./bin/generate_appcast \
+          --download-url-prefix "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.get_release.outputs.version }}/" \
+          --embed-release-notes \
+          --ed-key-file - \
+          archives
+        mkdir _site
+        mv archives/appcast.xml _site/appcast.xml
+
+    - name: Setup GitHub Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload appcast.xml
+      uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
