@@ -23,11 +23,21 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
           });
+
           const asset = release.data.assets[0];
-          core.setOutput('version', release.data.tag_name);
-          core.setOutput('asset_url', release.data.assets[0].browser_download_url);
-          core.setOutput('asset_name', release.data.assets[0].name);
-          core.setOutput('release_notes', release.data.body);
+          const version = release.data.tag_name.replace(/^v/, '');
+          core.setOutput('version', version);
+          core.setOutput('asset_url', asset.browser_download_url);
+          core.setOutput('asset_name', asset.name);
+
+          const {body} = release.data;
+
+          const criticalMarker = '<!-- CRITICAL_UPDATE -->';
+          const isCritical = body.includes(criticalMarker);
+          core.setOutput('is_critical', isCritical);
+
+          const cleanedReleaseNotes = body.replace(criticalMarker, '');
+          core.setOutput('release_notes', cleanedReleaseNotes);
 
     - name: Download release asset
       run: |
@@ -41,11 +51,18 @@ jobs:
 
     - name: Generate appcast.xml
       run: |
-        curl --location https://github.com/sparkle-project/Sparkle/releases/download/2.6.2/Sparkle-2.6.2.tar.xz | tar --extract --xz
+        curl --location https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz | tar --extract --xz
+
+        CRITICAL_UPDATE_ARGUMENT=""
+        if [ "${{ steps.get_release.outputs.is_critical }}" == "true" ]; then
+          CRITICAL_UPDATE_ARGUMENT="--critical-update-version ${{ steps.get_release.outputs.version }}"
+        fi
+
         echo "${{ secrets.SPARKLE_PRIVATE_KEY }}" | ./bin/generate_appcast \
-          --download-url-prefix "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.get_release.outputs.version }}/" \
+          --download-url-prefix "${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ steps.get_release.outputs.version }}/" \
           --embed-release-notes \
           --ed-key-file - \
+          $CRITICAL_UPDATE_ARGUMENT \
           archives
         mkdir _site
         mv archives/appcast.xml _site/appcast.xml

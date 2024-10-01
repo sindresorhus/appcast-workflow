@@ -15,3 +15,4 @@ Fork and use this for your own apps if you'd like. I'm happy to accept improveme
 ## Publish update
 
 - Create a new release on the repo and add the zipped app bundle as a binary to the release.
+	- To mark an update as [criticial](https://sparkle-project.org/documentation/publishing/#critical-updates), include `<!-- CRITICAL_UPDATE -->` in the release notes.
